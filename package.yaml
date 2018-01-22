@@ -62,6 +62,7 @@ tests:
     - cryptopals
     - tasty
     - tasty-hspec
+    - bytestring
     ghc-options:
     - -rtsopts
     - -threaded
