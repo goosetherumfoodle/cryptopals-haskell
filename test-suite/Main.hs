@@ -4,6 +4,7 @@ import qualified Test.Tasty
 import Test.Tasty.Hspec
 import Set1
 import Data.ByteString
+import Control.Monad (join)
 
 main :: IO ()
 main = do
@@ -22,4 +23,4 @@ spec = parallel $ do
       it "correctly XORs hex strings" $ do
         let firstBytes = decodeHex . HexString $ "1c0111001f010100061a024b53535009181c"
             secondBytes = decodeHex . HexString $ "686974207468652062756c6c277320657965"
-        (bytesToHex . xor <$> firstBytes <*> secondBytes) `shouldBe` (Right . HexString $ ("746865206b696420646f6e277420706c6179" :: ByteString))
+        (bytesToHex <$> join (xor <$> firstBytes <*> secondBytes)) `shouldBe` (Right . HexString $ ("746865206b696420646f6e277420706c6179" :: ByteString))

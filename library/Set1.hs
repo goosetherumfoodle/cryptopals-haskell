@@ -55,5 +55,5 @@ decodeHex a | (decoded, "") <- BS16.decode . runHex $ a = Right decoded
 bytesToHex :: ByteString -> HexString ByteString
 bytesToHex = undefined
 
-xor :: ByteString -> ByteString -> ByteString
+xor :: ByteString -> ByteString -> Either (ErrorString ByteString) ByteString
 xor = undefined
