@@ -24,3 +24,11 @@ spec = parallel $ do
         let firstBytes = decodeHex . HexString $ "1c0111001f010100061a024b53535009181c"
             secondBytes = decodeHex . HexString $ "686974207468652062756c6c277320657965"
         (bytesToHex <$> join (xorBytes <$> firstBytes <*> secondBytes)) `shouldBe` (Right . HexString $ ("746865206b696420646f6e277420706c6179" :: ByteString))
+    describe "Challenge 3" $ do
+      describe "gramify" $ do
+        describe "collects all N groups in list" $ do
+          it "when N is 2, finds all bigrams" $ do
+            (findNgrams 2 "12345") `shouldBe` ["12", "23", "34", "45"]
+
+          it "when N is 3, finds all trigrams" $ do
+            (findNgrams 3 "12345") `shouldBe` ["123", "234", "345"]
