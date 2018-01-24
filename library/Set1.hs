@@ -6,6 +6,7 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as BS16
 import qualified Data.ByteString.Base64 as BS64
+import Data.Bits (xor)
 
 newtype ErrorString a = ErrorString {runError :: a} deriving (Show, Eq)
 newtype HexString a = HexString {runHex :: a} deriving (Show, Eq)
@@ -53,7 +54,8 @@ decodeHex a | (decoded, "") <- BS16.decode . runHex $ a = Right decoded
 -- 746865206b696420646f6e277420706c6179
 
 bytesToHex :: ByteString -> HexString ByteString
-bytesToHex = undefined
+bytesToHex = HexString . BS16.encode
 
-xor :: ByteString -> ByteString -> Either (ErrorString ByteString) ByteString
-xor = undefined
+xorBytes :: ByteString -> ByteString -> Either (ErrorString ByteString) ByteString
+xorBytes a b | (BS.length a) == (BS.length b) = Right . BS.pack $ BS.zipWith xor a b
+             | otherwise = Left . ErrorString $ "Attempted to xor bytes of unequal length"
