@@ -3,7 +3,7 @@
 import qualified Test.Tasty
 import Test.Tasty.Hspec
 import Set1
-import Data.ByteString
+import Data.ByteString.Lazy
 import Control.Monad (join)
 
 main :: IO ()

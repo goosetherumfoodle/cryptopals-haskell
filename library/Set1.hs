@@ -2,11 +2,13 @@
 
 module Set1 where
 
-import           Data.ByteString        (ByteString)
-import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Base16 as BS16
-import qualified Data.ByteString.Base64 as BS64
+import Data.Word (Word8)
+import           Data.ByteString.Lazy        (ByteString)
+import qualified Data.ByteString.Lazy        as BS
+import qualified Data.ByteString.Base16.Lazy as BS16
+import qualified Data.ByteString.Base64.Lazy as BS64
 import Data.Bits (xor)
+import Debug.Trace
 
 newtype ErrorString a = ErrorString {runError :: a} deriving (Show, Eq)
 newtype HexString a = HexString {runHex :: a} deriving (Show, Eq)
@@ -76,8 +78,11 @@ xorBytes a b | (BS.length a) == (BS.length b) = Right . BS.pack $ BS.zipWith xor
 -- You now have our permission to make "ETAOIN SHRDLU" jokes on Twitter.
 -- foldr :: (Word8 -> a -> a) -> a -> ByteString -> a
 findNgrams :: Int -> ByteString -> [ByteString]
-findNgrams = undefined
--- findNgrams i = foldr collect (i, i, "")
---   where
---     collect :: Word8 ->  -> a
---     collect
+findNgrams n string = outString $ BS.foldr (go $ n - 1) (n, mempty, []) string
+
+go :: Int -> Word8 -> (Int, [Word8], [ByteString]) -> (Int, [Word8], [ByteString])
+go x char tup@(0, string, out) = trace ("first " ++ show tup ++ " -> " ++ show horse ) horse where horse = (x, [char], BS.pack string : out)
+go _ char tup@(y, string, out) = trace ("second" ++ show tup ++ " -> " ++ show horse) horse where horse = (y - 1, char : string, out)
+
+outString :: (a, b, c) -> c
+outString (_, _, s) = s
