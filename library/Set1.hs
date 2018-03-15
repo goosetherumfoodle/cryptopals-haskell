@@ -8,7 +8,6 @@ import qualified Data.ByteString.Lazy        as BS
 import qualified Data.ByteString.Base16.Lazy as BS16
 import qualified Data.ByteString.Base64.Lazy as BS64
 import Data.Bits (xor)
-import Debug.Trace
 
 newtype ErrorString a = ErrorString {runError :: a} deriving (Show, Eq)
 newtype HexString a = HexString {runHex :: a} deriving (Show, Eq)
@@ -32,7 +31,7 @@ newtype Base64String a = Base64String {runBase64 :: a} deriving (Show, Eq)
 -- Always operate on raw bytes, never on encoded strings. Only use hex and base64 for pretty-printing.
 
 hexToBase64 :: HexString ByteString -> Either (ErrorString ByteString) (Base64String ByteString)
-hexToBase64 a = Base64String . BS64.encode <$> (decodeHex a)
+hexToBase64 a = Base64String . BS64.encode <$> decodeHex a
 
 decodeHex :: HexString ByteString -> Either (ErrorString ByteString) ByteString
 decodeHex a | (decoded, "") <- BS16.decode . runHex $ a = Right decoded
@@ -59,7 +58,7 @@ bytesToHex :: ByteString -> HexString ByteString
 bytesToHex = HexString . BS16.encode
 
 xorBytes :: ByteString -> ByteString -> Either (ErrorString ByteString) ByteString
-xorBytes a b | (BS.length a) == (BS.length b) = Right . BS.pack $ BS.zipWith xor a b
+xorBytes a b | BS.length a == BS.length b = Right . BS.pack $ BS.zipWith xor a b
              | otherwise = Left . ErrorString $ "Attempted to xor bytes of unequal length"
 
 -- Single-byte XOR cipher
@@ -76,13 +75,18 @@ xorBytes a b | (BS.length a) == (BS.length b) = Right . BS.pack $ BS.zipWith xor
 -- Achievement Unlocked
 
 -- You now have our permission to make "ETAOIN SHRDLU" jokes on Twitter.
--- foldr :: (Word8 -> a -> a) -> a -> ByteString -> a
-findNgrams :: Int -> ByteString -> [ByteString]
-findNgrams n string = outString $ BS.foldr (go $ n - 1) (n, mempty, []) string
 
-go :: Int -> Word8 -> (Int, [Word8], [ByteString]) -> (Int, [Word8], [ByteString])
-go x char tup@(0, string, out) = trace ("first " ++ show tup ++ " -> " ++ show horse ) horse where horse = (x, [char], BS.pack string : out)
-go _ char tup@(y, string, out) = trace ("second" ++ show tup ++ " -> " ++ show horse) horse where horse = (y - 1, char : string, out)
+-- todo: replace list with sequence?
 
-outString :: (a, b, c) -> c
-outString (_, _, s) = s
+splitNGrams :: Int -> ByteString -> [ByteString]
+splitNGrams n string = fst $ step emptyByte $ BS.foldr step initVal string
+  where step :: Word8 -> ([ByteString], (Int, [ByteString])) -> ([ByteString], (Int, [ByteString]))
+        step char (out, (0, parts)) = nextStep (last parts : out) 0 char (init parts)
+        step char (out, (i, parts)) = nextStep out (i - 1) char parts
+
+        nextStep :: [ByteString] -> Int -> Word8 -> [ByteString] -> ([ByteString], (Int, [ByteString]))
+        nextStep a b c d = (a, (b, BS.pack [c] : fmap (BS.cons c) d))
+
+        initVal = ([], (n, []))
+
+        emptyByte = BS.head " "

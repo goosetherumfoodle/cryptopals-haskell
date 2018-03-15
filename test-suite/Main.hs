@@ -28,7 +28,7 @@ spec = parallel $ do
       describe "gramify" $ do
         describe "collects all N groups in list" $ do
           it "when N is 2, finds all bigrams" $ do
-            (findNgrams 2 "12345") `shouldBe` ["12", "23", "34", "45"]
+            (splitNGrams 2 "12345") `shouldBe` ["12", "23", "34", "45"]
 
           it "when N is 3, finds all trigrams" $ do
-            (findNgrams 3 "12345") `shouldBe` ["123", "234", "345"]
+            (splitNGrams 3 "12345") `shouldBe` ["123", "234", "345"]
