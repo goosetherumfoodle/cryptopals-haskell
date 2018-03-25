@@ -23,9 +23,11 @@ ghc-options: -Wall
 library:
   dependencies:
   - base
+  - containers
   - bytestring
   - base64-bytestring
   - base16-bytestring
+  - regex-pcre
   source-dirs: library
 
 executables:

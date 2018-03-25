@@ -25,10 +25,32 @@ spec = parallel $ do
             secondBytes = decodeHex . HexString $ "686974207468652062756c6c277320657965"
         (bytesToHex <$> join (xorBytes <$> firstBytes <*> secondBytes)) `shouldBe` (Right . HexString $ ("746865206b696420646f6e277420706c6179" :: ByteString))
     describe "Challenge 3" $ do
-      describe "gramify" $ do
+      describe "splitNGrams" $ do
         describe "collects all N groups in list" $ do
           it "when N is 2, finds all bigrams" $ do
             (splitNGrams 2 "12345") `shouldBe` ["12", "23", "34", "45"]
 
           it "when N is 3, finds all trigrams" $ do
             (splitNGrams 3 "12345") `shouldBe` ["123", "234", "345"]
+
+      describe "occuranceCount" $ do
+        context "with two occurances of the ngram (mixed case)" $ do
+          it "finds 2 occurances" $ do
+            let string = "the boy GROWETH"
+                ngram = "th"
+            occuranceCount ngram string `shouldBe` 2
+
+        context "with no occurances in string" $ do
+          it "finds 0 occurances" $ do
+            let string = "hte boy GROWET How"
+                ngram = "th"
+            occuranceCount ngram string `shouldBe` 0
+
+      describe "scoring plaintext" $ do
+        it "adds 1 to score for each present monogram" $
+          scorePlaintext [((fmap Mono) ["a", "o", "r", "x"])] "horse" `shouldBe` Score 2
+
+        it "adds 1 for monograms, 2 for bigrams and 3 for quadgrams" $
+          scorePlaintext [(Mono <$> ["a", "o", "r", "x"])
+                         , (Bi <$> ["rs", "th", "oh"])
+                         , (Quad <$> ["orse", "xrse"])] "horse" `shouldBe` Score 7

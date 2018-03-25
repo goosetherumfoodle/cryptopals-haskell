@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Set1 where
@@ -7,8 +8,14 @@ import           Data.ByteString.Lazy        (ByteString)
 import qualified Data.ByteString.Lazy        as BS
 import qualified Data.ByteString.Base16.Lazy as BS16
 import qualified Data.ByteString.Base64.Lazy as BS64
-import Data.Bits (xor)
+import Data.Bits ((.|.), xor)
+import Text.Regex.PCRE  (defaultExecOpt, compCaseless, defaultCompOpt, makeRegexOpts, matchCount)
 
+data NGram = Mono ByteString
+           | Bi ByteString
+           | Quad ByteString
+
+newtype Score a = Score a deriving (Num, Show, Eq)
 newtype ErrorString a = ErrorString {runError :: a} deriving (Show, Eq)
 newtype HexString a = HexString {runHex :: a} deriving (Show, Eq)
 newtype Base64String a = Base64String {runBase64 :: a} deriving (Show, Eq)
@@ -61,6 +68,11 @@ xorBytes :: ByteString -> ByteString -> Either (ErrorString ByteString) ByteStri
 xorBytes a b | BS.length a == BS.length b = Right . BS.pack $ BS.zipWith xor a b
              | otherwise = Left . ErrorString $ "Attempted to xor bytes of unequal length"
 
+xorBytesByChar :: Word8 -> ByteString ->  ByteString
+xorBytesByChar char str = BS.pack $ BS.zipWith xor (BS.pack charStr) str
+  where
+    charStr = replicate (fromIntegral . BS.length $ str) char
+
 -- Single-byte XOR cipher
 
 -- The hex encoded string:
@@ -78,15 +90,35 @@ xorBytes a b | BS.length a == BS.length b = Right . BS.pack $ BS.zipWith xor a b
 
 -- todo: replace list with sequence?
 
+type IntermediateNGrams = ([ByteString], (Int, [ByteString]))
+
 splitNGrams :: Int -> ByteString -> [ByteString]
 splitNGrams n string = fst $ step emptyByte $ BS.foldr step initVal string
-  where step :: Word8 -> ([ByteString], (Int, [ByteString])) -> ([ByteString], (Int, [ByteString]))
+
+  where step :: Word8 -> IntermediateNGrams -> IntermediateNGrams
         step char (out, (0, parts)) = nextStep (last parts : out) 0 char (init parts)
         step char (out, (i, parts)) = nextStep out (i - 1) char parts
 
-        nextStep :: [ByteString] -> Int -> Word8 -> [ByteString] -> ([ByteString], (Int, [ByteString]))
+        nextStep :: [ByteString] -> Int -> Word8 -> [ByteString] -> IntermediateNGrams
         nextStep a b c d = (a, (b, BS.pack [c] : fmap (BS.cons c) d))
 
         initVal = ([], (n, []))
 
         emptyByte = BS.head " "
+
+scorePlaintext :: [[NGram]] -> ByteString -> Score Int
+scorePlaintext ngrams s = foldr (nGramsScore s) 0 ngrams
+
+nGramsScore :: ByteString -> [NGram] -> Score Int -> Score Int
+nGramsScore str ngrams initScore = foldr step initScore ngrams
+  where
+    step :: NGram -> Score Int -> Score Int
+    step (Mono gram) score = score + Score (occuranceCount gram str) * 1
+    step (Bi gram) score   = score + Score (occuranceCount gram str) * 2
+    step (Quad gram) score = score + Score (occuranceCount gram str) * 3
+
+occuranceCount :: ByteString -> ByteString -> Int
+occuranceCount = matchCount . regex
+  where
+    regex = makeRegexOpts caseInsensitive defaultExecOpt
+    caseInsensitive = defaultCompOpt .|. compCaseless
