@@ -16,7 +16,8 @@ import Text.Trifecta (letter, space, natural, some, parseByteString)
 import Data.Decimal (DecimalRaw(..))
 import Data.Monoid (Product(..))
 import Data.List (find)
-
+import Control.Monad (join)
+import Debug.Trace (trace)
 data NGram = Mono BS.ByteString
            | Bi BS.ByteString
            | Quad BS.ByteString
@@ -102,12 +103,13 @@ splitNGrams :: Int -> BS.ByteString -> [BS.ByteString]
 splitNGrams n string = fst $ step emptyByte $ BS.foldr step initVal string
 
   where step :: Word8 -> IntermediateNGrams -> IntermediateNGrams
-        step char (out, (0, parts)) = nextStep (last parts : out) 0 char (init parts)
+        step char (out, (0, parts)) = nextStep (last parts : out) 0 char $ init parts
         step char (out, (i, parts)) = nextStep out (i - 1) char parts
 
         nextStep :: [BS.ByteString] -> Int -> Word8 -> [BS.ByteString] -> IntermediateNGrams
         nextStep a b c d = (a, (b, BS.pack [c] : fmap (BS.cons c) d))
 
+        initVal :: IntermediateNGrams
         initVal = ([], (n, []))
 
         emptyByte = BS.head " "
@@ -115,24 +117,41 @@ splitNGrams n string = fst $ step emptyByte $ BS.foldr step initVal string
 data ScoredPlaintext = ScoredPlaintext BS.ByteString (DecimalRaw Integer)
   deriving (Show, Eq)
 
--- TODO: change [MonoProb] to dict
+-- TODO: change [MonoProb] to dict for O(1) lookup
 
-scorePlaintext :: [MonoProb] -> BS.ByteString -> ScoredPlaintext
+scorePlaintext :: [[NGramProb]] -> BS.ByteString -> ScoredPlaintext
 scorePlaintext probs str = ScoredPlaintext str productOfScores
   where
     productOfScores :: DecimalRaw Integer
-    productOfScores = getProduct $ foldMap Product allProbabilityScores
+    productOfScores = getProduct . foldMap Product . join $ allProbabilityScores <$> probs
 
-    allProbabilityScores :: [DecimalRaw Integer]
-    allProbabilityScores = getProbabilityScore <$> splitNGrams 1 str
+    allProbabilityScores :: [NGramProb] -> [DecimalRaw Integer]
+    allProbabilityScores probs'@((MonoProb _ _):_) = (getProbabilityScore probs') <$> splitNGrams 1 str
+    allProbabilityScores probs'@((BiProb _ _):_) = (getProbabilityScore probs') <$> splitNGrams 2 str
+    allProbabilityScores probs'@((TriProb _ _):_) = (getProbabilityScore probs') <$> splitNGrams 3 str
+    allProbabilityScores probs'@((QuadProb _ _):_) = (getProbabilityScore probs') <$> splitNGrams 4 str
+    allProbabilityScores _ = [emptyDecimal]
 
-    getProbabilityScore :: BS.ByteString -> DecimalRaw Integer
-    getProbabilityScore query | Just (MonoProb _ prob) <- find (fetch query) probs = prob
-                              | _                      <- find (fetch query) probs = Decimal 0 1
+    getProbabilityScore :: [NGramProb] -> BS.ByteString -> DecimalRaw Integer
+    getProbabilityScore probs'' query | Just prob <- find (fetch query) probs'' = probScore prob
+                                      | _         <- find (fetch query) probs'' = emptyDecimal
 
-    fetch :: BS.ByteString -> MonoProb -> Bool
-    fetch query (MonoProb ngram _) =  regexCaseIns (Ch8.singleton ngram) `Rx.matchTest` query
+    fetch :: BS.ByteString -> NGramProb -> Bool
+    fetch query prob = regexCaseIns (probNGram prob) `Rx.matchTest` query
 
+    emptyDecimal = Decimal 0 1
+
+probScore :: NGramProb -> DecimalRaw Integer
+probScore (MonoProb _ score) = score
+probScore (BiProb _ score)   = score
+probScore (TriProb _ score)  = score
+probScore (QuadProb _ score) = score
+
+probNGram :: NGramProb -> BS.ByteString
+probNGram (MonoProb ngram _) = Ch8.singleton ngram
+probNGram (BiProb ngram _)   = ngram
+probNGram (TriProb ngram _)  = ngram
+probNGram (QuadProb ngram _) = ngram
 
 regexCaseIns :: BS.ByteString -> Rx.Regex
 regexCaseIns = Rx.makeRegexOpts caseInsensitive Rx.defaultExecOpt
@@ -142,29 +161,91 @@ regexCaseIns = Rx.makeRegexOpts caseInsensitive Rx.defaultExecOpt
 monogramCountsRaw :: IO BSStrict.ByteString
 monogramCountsRaw = BSStrict.readFile "english_monograms.txt"
 
-data MonoCount = MonoCount Char Integer deriving (Show, Eq)
-data MonoProb = MonoProb Char (DecimalRaw Integer) deriving (Show, Eq)
+-- for length-checked storage
+data RawMonoGramCount = MonoRaw Char Integer deriving (Show, Eq)
 
-parseMonogramCount :: Tri.Parser MonoCount
-parseMonogramCount = do
+data RawBiGramCount = BiRaw (Char, Char) Integer deriving (Show, Eq)
+
+data RawTriGramCount = TriRaw (Char, Char, Char) Integer deriving (Show, Eq)
+
+data RawQuadGramCount = QuadRaw (Char, Char, Char, Char) Integer deriving (Show, Eq)
+
+data NGramCount = MonoCount Char Integer
+                | BiCount BS.ByteString Integer
+                | TriCount BS.ByteString Integer
+                | QuadCount BS.ByteString Integer deriving (Show, Eq)
+
+data NGramProb = MonoProb Char (DecimalRaw Integer)
+                | BiProb BS.ByteString (DecimalRaw Integer)
+                | TriProb BS.ByteString (DecimalRaw Integer)
+                | QuadProb BS.ByteString (DecimalRaw Integer) deriving (Show, Eq)
+
+parseRawMonogramCount :: Tri.Parser RawMonoGramCount
+parseRawMonogramCount = do
   mono <- letter
-  space
-  count <- natural
-  pure $ MonoCount mono count
+  parseCount $ MonoRaw mono
 
-getMonoGramCounts :: BSStrict.ByteString -> Tri.Result [MonoCount]
-getMonoGramCounts = parseByteString (some parseMonogramCount) mempty
+parseRawBigramCount :: Tri.Parser RawBiGramCount
+parseRawBigramCount = do
+  one <- letter
+  two <- letter
+  parseCount $ BiRaw (one, two)
 
-calcProbabilityScores :: [MonoCount] -> [MonoProb]
+parseRawTrigramCount :: Tri.Parser RawTriGramCount
+parseRawTrigramCount = do
+  one <- letter
+  two <- letter
+  three <- letter
+  parseCount $ TriRaw (one, two, three)
+
+parseRawQuadgramCount :: Tri.Parser RawQuadGramCount
+parseRawQuadgramCount = do
+  one <- letter
+  two <- letter
+  three <- letter
+  four <- letter
+  parseCount $ QuadRaw (one, two, three, four)
+
+parseCount :: (Integer -> a) -> Tri.Parser a
+parseCount cstr = space >> natural >>= \count -> return $ cstr count
+
+getMonoGramCounts :: BSStrict.ByteString -> Tri.Result [RawMonoGramCount]
+getMonoGramCounts = parseSome parseRawMonogramCount
+
+getBiGramCounts :: BSStrict.ByteString -> Tri.Result [RawBiGramCount]
+getBiGramCounts = parseSome parseRawBigramCount
+
+getTriGramCounts :: BSStrict.ByteString -> Tri.Result [RawTriGramCount]
+getTriGramCounts = parseSome parseRawTrigramCount
+
+getQuadGramCounts :: BSStrict.ByteString -> Tri.Result [RawQuadGramCount]
+getQuadGramCounts = parseSome parseRawQuadgramCount
+
+parseSome :: Tri.Parser a -> BSStrict.ByteString -> Tri.Result [a]
+parseSome = flip parseByteString mempty . some
+
+calcProbabilityScores :: [NGramCount] -> [NGramProb]
 calcProbabilityScores counts = fmap (countToProb totalCount) counts
   where
     totalCount :: Integer
     totalCount = foldr sumCounts 0 counts
 
-    sumCounts :: MonoCount -> Integer -> Integer
+    sumCounts :: NGramCount -> Integer -> Integer
     sumCounts (MonoCount _ a) b = a + b
+    sumCounts (BiCount _ a) b = a + b
+    sumCounts (TriCount _ a) b = a + b
+    sumCounts (QuadCount _ a) b = a + b
 
-countToProb :: Integer -> MonoCount -> MonoProb
-countToProb total (MonoCount char count) = MonoProb char countOverTotal
+countToProb :: Integer -> NGramCount -> NGramProb
+countToProb total (MonoCount char count) = mkProb MonoProb char total count
+countToProb total (BiCount bigram count) = mkProb BiProb bigram total count
+countToProb total (TriCount trigram count) = mkProb TriProb trigram total count
+countToProb total (QuadCount quadgram count) = mkProb QuadProb quadgram total count
+
+type Total = Integer
+type Count = Integer
+
+mkProb :: (a -> DecimalRaw Integer -> NGramProb) -> a -> Total -> Count -> NGramProb
+mkProb constructor gram total count = constructor gram countOverTotal
   where
     countOverTotal = Decimal 0 count / Decimal 0 total

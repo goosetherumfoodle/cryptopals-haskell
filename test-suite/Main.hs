@@ -39,33 +39,61 @@ spec = parallel $ do
 
       describe "scoring plaintext" $ do
         it "finds product of probability scores of each monogram" $ do
-          let probabilities = [MonoProb 'H' (Decimal 1 4), MonoProb 'O' (Decimal 1 2)]
+          let probabilities = [[MonoProb 'H' (Decimal 1 4), MonoProb 'O' (Decimal 1 2)]]
               plain = "horse"
           scorePlaintext probabilities plain `shouldBe` ScoredPlaintext plain (Decimal 2 8)
 
-        -- it "adds 1 for monograms, 2 for bigrams and 3 for quadgrams" $
-        --   scorePlaintext [(Mono <$> ["a", "o", "r", "x"])
-        --                  , (Bi <$> ["rs", "th", "oh"])
-        --                  , (Quad <$> ["orse", "xrse"])] "horse" `shouldBe` Score 7
+        it "finds product of probability scores of each ngram" $ do
+          let probabilities = [[MonoProb 'H' (Decimal 1 2)]
+                             , [BiProb "HO" (Decimal 1 2) , BiProb "XX" (Decimal 0 5)]
+                             , [TriProb "RSE" (Decimal 1 2)]
+                             , [QuadProb "HORS" (Decimal 1 2)]]
+              plain = "horse"
+          scorePlaintext probabilities plain `shouldBe` ScoredPlaintext plain (Decimal 4 16)
 
-      describe "parsing monogram counts" $ do
+      describe "parsing ngram counts" $ do
         context "with a valid mongrams + counts  string" $ do
-          it "successfully parses MonoCounts" $ do
+          it "successfully parses MonoRaw" $ do
             let input = "E 529117365\nT 390965105"
-                expected = Tri.Success [MonoCount 'E' 529117365, MonoCount 'T' 390965105]
+                expected = Tri.Success [MonoRaw 'E' 529117365, MonoRaw 'T' 390965105]
             getMonoGramCounts input `shouldBe` expected
+
+        context "with a valid bigrams + counts  string" $ do
+          it "successfully parses BiCounts" $ do
+            let input = "AB 529117365\nCD 390965105"
+                expected = Tri.Success [BiRaw ('A', 'B') 529117365, BiRaw ('C', 'D') 390965105]
+            getBiGramCounts input `shouldBe` expected
+
+        context "with a valid trigrams + counts  string" $ do
+          it "successfully parses TriCounts" $ do
+            let input = "ABC 529117365\nDEF 390965105"
+                expected = Tri.Success [TriRaw ('A', 'B', 'C') 529117365, TriRaw ('D', 'E', 'F') 390965105]
+            getTriGramCounts input `shouldBe` expected
+
+        context "with a valid quadgrams + counts  string" $ do
+          it "successfully parses QuadCounts" $ do
+            let input = "ABCD 529117365\nEFGH 390965105"
+                expected = Tri.Success [QuadRaw ('A', 'B', 'C', 'D') 529117365, QuadRaw ('E', 'F', 'G', 'H') 390965105]
+            getQuadGramCounts input `shouldBe` expected
 
         context "with a invalid mongrams + counts string" $ do
           it "fails to parse Monocounts" $ do
             let input = "E 529117365\nTR 390965105"
             shouldBeTriFailure $ getMonoGramCounts input
 
-      describe "deriving monogram probability scores" $ do
+      describe "deriving ngram probability scores" $ do
         context "with a monogram that occurs 2 times, out of 5 total monograms" $ do
           it "should have a probability score of 0.4" $ do
             let input = [MonoCount 'A' 2, MonoCount 'T' 3]
                 expected = [MonoProb 'A' (Decimal 1 4), MonoProb 'T' (Decimal 1 6)]
             expected `shouldBe` calcProbabilityScores input
+
+        context "with a bigram that occurs 2 times, out of 5 total bigrams" $ do
+          it "should have a probability score of 0.4" $ do
+            let input = [BiCount "AA" 2, BiCount "TT" 3]
+                expected = [BiProb "AA" (Decimal 1 4), BiProb "TT" (Decimal 1 6)]
+            expected `shouldBe` calcProbabilityScores input
+
 
 -- helpers for tests
 
