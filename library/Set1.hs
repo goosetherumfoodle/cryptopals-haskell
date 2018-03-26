@@ -4,16 +4,18 @@
 module Set1 where
 
 import Data.Word (Word8)
-import           Data.ByteString.Lazy        (ByteString)
+import qualified Data.ByteString        as BSStrict
 import qualified Data.ByteString.Lazy        as BS
 import qualified Data.ByteString.Base16.Lazy as BS16
 import qualified Data.ByteString.Base64.Lazy as BS64
 import Data.Bits ((.|.), xor)
 import Text.Regex.PCRE  (defaultExecOpt, compCaseless, defaultCompOpt, makeRegexOpts, matchCount)
+import qualified Text.Trifecta as Tri
+import Text.Trifecta (letter, space, natural, some, parseByteString)
 
-data NGram = Mono ByteString
-           | Bi ByteString
-           | Quad ByteString
+data NGram = Mono BS.ByteString
+           | Bi BS.ByteString
+           | Quad BS.ByteString
 
 newtype Score a = Score a deriving (Num, Show, Eq)
 newtype ErrorString a = ErrorString {runError :: a} deriving (Show, Eq)
@@ -37,10 +39,10 @@ newtype Base64String a = Base64String {runBase64 :: a} deriving (Show, Eq)
 
 -- Always operate on raw bytes, never on encoded strings. Only use hex and base64 for pretty-printing.
 
-hexToBase64 :: HexString ByteString -> Either (ErrorString ByteString) (Base64String ByteString)
+hexToBase64 :: HexString BS.ByteString -> Either (ErrorString BS.ByteString) (Base64String BS.ByteString)
 hexToBase64 a = Base64String . BS64.encode <$> decodeHex a
 
-decodeHex :: HexString ByteString -> Either (ErrorString ByteString) ByteString
+decodeHex :: HexString BS.ByteString -> Either (ErrorString BS.ByteString) BS.ByteString
 decodeHex a | (decoded, "") <- BS16.decode . runHex $ a = Right decoded
             | otherwise = Left . ErrorString $ BS.concat ["invalid hex: ", runHex a]
 
@@ -61,14 +63,14 @@ decodeHex a | (decoded, "") <- BS16.decode . runHex $ a = Right decoded
 
 -- 746865206b696420646f6e277420706c6179
 
-bytesToHex :: ByteString -> HexString ByteString
+bytesToHex :: BS.ByteString -> HexString BS.ByteString
 bytesToHex = HexString . BS16.encode
 
-xorBytes :: ByteString -> ByteString -> Either (ErrorString ByteString) ByteString
+xorBytes :: BS.ByteString -> BS.ByteString -> Either (ErrorString BS.ByteString) BS.ByteString
 xorBytes a b | BS.length a == BS.length b = Right . BS.pack $ BS.zipWith xor a b
              | otherwise = Left . ErrorString $ "Attempted to xor bytes of unequal length"
 
-xorBytesByChar :: Word8 -> ByteString ->  ByteString
+xorBytesByChar :: Word8 -> BS.ByteString ->  BS.ByteString
 xorBytesByChar char str = BS.pack $ BS.zipWith xor (BS.pack charStr) str
   where
     charStr = replicate (fromIntegral . BS.length $ str) char
@@ -90,26 +92,26 @@ xorBytesByChar char str = BS.pack $ BS.zipWith xor (BS.pack charStr) str
 
 -- todo: replace list with sequence?
 
-type IntermediateNGrams = ([ByteString], (Int, [ByteString]))
+type IntermediateNGrams = ([BS.ByteString], (Int, [BS.ByteString]))
 
-splitNGrams :: Int -> ByteString -> [ByteString]
+splitNGrams :: Int -> BS.ByteString -> [BS.ByteString]
 splitNGrams n string = fst $ step emptyByte $ BS.foldr step initVal string
 
   where step :: Word8 -> IntermediateNGrams -> IntermediateNGrams
         step char (out, (0, parts)) = nextStep (last parts : out) 0 char (init parts)
         step char (out, (i, parts)) = nextStep out (i - 1) char parts
 
-        nextStep :: [ByteString] -> Int -> Word8 -> [ByteString] -> IntermediateNGrams
+        nextStep :: [BS.ByteString] -> Int -> Word8 -> [BS.ByteString] -> IntermediateNGrams
         nextStep a b c d = (a, (b, BS.pack [c] : fmap (BS.cons c) d))
 
         initVal = ([], (n, []))
 
         emptyByte = BS.head " "
 
-scorePlaintext :: [[NGram]] -> ByteString -> Score Int
+scorePlaintext :: [[NGram]] -> BS.ByteString -> Score Int
 scorePlaintext ngrams s = foldr (nGramsScore s) 0 ngrams
 
-nGramsScore :: ByteString -> [NGram] -> Score Int -> Score Int
+nGramsScore :: BS.ByteString -> [NGram] -> Score Int -> Score Int
 nGramsScore str ngrams initScore = foldr step initScore ngrams
   where
     step :: NGram -> Score Int -> Score Int
@@ -117,8 +119,23 @@ nGramsScore str ngrams initScore = foldr step initScore ngrams
     step (Bi gram) score   = score + Score (occuranceCount gram str) * 2
     step (Quad gram) score = score + Score (occuranceCount gram str) * 3
 
-occuranceCount :: ByteString -> ByteString -> Int
+occuranceCount :: BS.ByteString -> BS.ByteString -> Int
 occuranceCount = matchCount . regex
   where
     regex = makeRegexOpts caseInsensitive defaultExecOpt
     caseInsensitive = defaultCompOpt .|. compCaseless
+
+monogramCountsRaw :: IO BSStrict.ByteString
+monogramCountsRaw = BSStrict.readFile "english_monograms.txt"
+
+newtype Count a = Count a deriving (Show, Eq, Num)
+newtype Prob a = Prob a deriving Show
+
+data MonoCount = MonoCount Char (Count Integer) deriving (Show, Eq)
+data MonoProb = MonoProp Char (Prob Integer)
+
+parseMonogramCount :: Tri.Parser MonoCount
+parseMonogramCount = letter >>= \mono -> space >> natural >>= \c -> pure . MonoCount mono $ Count c
+
+getMonoGramCounts :: BSStrict.ByteString -> Tri.Result [MonoCount]
+getMonoGramCounts = parseByteString (some parseMonogramCount) mempty

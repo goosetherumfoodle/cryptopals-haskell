@@ -5,6 +5,7 @@ import Test.Tasty.Hspec
 import Set1
 import Data.ByteString.Lazy
 import Control.Monad (join)
+import qualified Text.Trifecta as Tri
 
 main :: IO ()
 main = do
@@ -54,3 +55,26 @@ spec = parallel $ do
           scorePlaintext [(Mono <$> ["a", "o", "r", "x"])
                          , (Bi <$> ["rs", "th", "oh"])
                          , (Quad <$> ["orse", "xrse"])] "horse" `shouldBe` Score 7
+
+      describe "parsing monogram counts" $ do
+        context "with a valid mongrams + counts  string" $ do
+          it "successfully parses MonoCounts" $ do
+            let input = "E 529117365\nT 390965105"
+                expected = Tri.Success [MonoCount 'E' 529117365, MonoCount 'T' 390965105]
+            getMonoGramCounts input `shouldBe` expected
+
+        context "with a invalid mongrams + counts string" $ do
+          it "fails to parse Monocounts" $ do
+            let input = "E 529117365\nTR 390965105"
+            shouldBeTriFailure $ getMonoGramCounts input
+
+-- helpers for tests
+
+shouldBeTriFailure :: Tri.Result a -> Bool
+shouldBeTriFailure (Tri.Failure _) = True
+shouldBeTriFailure (Tri.Success _) = False
+
+instance Eq a => Eq (Tri.Result a) where
+  (Tri.Success a) == (Tri.Success b) = a == b
+  (Tri.Failure _) == (Tri.Failure _) = False
+  _ == _ = False

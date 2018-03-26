@@ -28,6 +28,7 @@ library:
   - base64-bytestring
   - base16-bytestring
   - regex-pcre
+  - trifecta
   source-dirs: library
 
 executables:
@@ -65,6 +66,7 @@ tests:
     - tasty
     - tasty-hspec
     - bytestring
+    - trifecta
     ghc-options:
     - -rtsopts
     - -threaded
