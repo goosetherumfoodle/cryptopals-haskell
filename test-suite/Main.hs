@@ -6,6 +6,7 @@ import Set1
 import Data.ByteString.Lazy
 import Control.Monad (join)
 import qualified Text.Trifecta as Tri
+import           Data.Decimal              (DecimalRaw (Decimal))
 
 main :: IO ()
 main = do
@@ -67,6 +68,13 @@ spec = parallel $ do
           it "fails to parse Monocounts" $ do
             let input = "E 529117365\nTR 390965105"
             shouldBeTriFailure $ getMonoGramCounts input
+
+      describe "deriving monogram probability scores" $ do
+        context "with a monogram that occurs 2 times, out of 5 total monograms" $ do
+          it "should have a probability score of 0.4" $ do
+            let input = [MonoCount 'A' 2, MonoCount 'T' 3]
+                expected = [MonoProb 'A' (Decimal 1 4), MonoProb 'T' (Decimal 1 6)]
+            calcPorobabilityScores input `shouldBe` expected
 
 -- helpers for tests
 

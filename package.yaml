@@ -29,6 +29,7 @@ library:
   - base16-bytestring
   - regex-pcre
   - trifecta
+  - Decimal
   source-dirs: library
 
 executables:
@@ -67,6 +68,7 @@ tests:
     - tasty-hspec
     - bytestring
     - trifecta
+    - Decimal
     ghc-options:
     - -rtsopts
     - -threaded

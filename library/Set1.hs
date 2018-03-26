@@ -12,6 +12,7 @@ import Data.Bits ((.|.), xor)
 import Text.Regex.PCRE  (defaultExecOpt, compCaseless, defaultCompOpt, makeRegexOpts, matchCount)
 import qualified Text.Trifecta as Tri
 import Text.Trifecta (letter, space, natural, some, parseByteString)
+import Data.Decimal (DecimalRaw(..))
 
 data NGram = Mono BS.ByteString
            | Bi BS.ByteString
@@ -128,14 +129,29 @@ occuranceCount = matchCount . regex
 monogramCountsRaw :: IO BSStrict.ByteString
 monogramCountsRaw = BSStrict.readFile "english_monograms.txt"
 
-newtype Count a = Count a deriving (Show, Eq, Num)
-newtype Prob a = Prob a deriving Show
-
-data MonoCount = MonoCount Char (Count Integer) deriving (Show, Eq)
-data MonoProb = MonoProp Char (Prob Integer)
+data MonoCount = MonoCount Char Integer deriving (Show, Eq)
+data MonoProb = MonoProb Char (DecimalRaw Integer) deriving (Show, Eq)
 
 parseMonogramCount :: Tri.Parser MonoCount
-parseMonogramCount = letter >>= \mono -> space >> natural >>= \c -> pure . MonoCount mono $ Count c
+parseMonogramCount = do
+  mono <- letter
+  space
+  count <- natural
+  pure $ MonoCount mono count
 
 getMonoGramCounts :: BSStrict.ByteString -> Tri.Result [MonoCount]
 getMonoGramCounts = parseByteString (some parseMonogramCount) mempty
+
+calcPorobabilityScores :: [MonoCount] -> [MonoProb]
+calcPorobabilityScores counts = fmap (countToProb totalCount) counts
+  where
+    totalCount :: Integer
+    totalCount = foldr sumCounts 0 counts
+
+    sumCounts :: MonoCount -> Integer -> Integer
+    sumCounts (MonoCount _ a) b = a + b
+
+countToProb :: Integer -> MonoCount -> MonoProb
+countToProb total (MonoCount char count) = MonoProb char $ countOverTotal
+  where
+    countOverTotal = (Decimal 0 count) / (Decimal 0 total)
