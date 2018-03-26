@@ -21,11 +21,13 @@ spec = parallel $ do
         let expected = Right . Base64String $ "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t"
             result = hexToBase64 $ HexString "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"
         result `shouldBe` expected
+
     describe "Challenge 2" $ do
       it "correctly XORs hex strings" $ do
         let firstBytes = decodeHex . HexString $ "1c0111001f010100061a024b53535009181c"
             secondBytes = decodeHex . HexString $ "686974207468652062756c6c277320657965"
         (bytesToHex <$> join (xorBytes <$> firstBytes <*> secondBytes)) `shouldBe` (Right . HexString $ ("746865206b696420646f6e277420706c6179" :: ByteString))
+
     describe "Challenge 3" $ do
       describe "splitNGrams" $ do
         describe "collects all N groups in list" $ do
@@ -35,27 +37,16 @@ spec = parallel $ do
           it "when N is 3, finds all trigrams" $ do
             (splitNGrams 3 "12345") `shouldBe` ["123", "234", "345"]
 
-      describe "occuranceCount" $ do
-        context "with two occurances of the ngram (mixed case)" $ do
-          it "finds 2 occurances" $ do
-            let string = "the boy GROWETH"
-                ngram = "th"
-            occuranceCount ngram string `shouldBe` 2
-
-        context "with no occurances in string" $ do
-          it "finds 0 occurances" $ do
-            let string = "hte boy GROWET How"
-                ngram = "th"
-            occuranceCount ngram string `shouldBe` 0
-
       describe "scoring plaintext" $ do
-        it "adds 1 to score for each present monogram" $
-          scorePlaintext [((fmap Mono) ["a", "o", "r", "x"])] "horse" `shouldBe` Score 2
+        it "finds product of probability scores of each monogram" $ do
+          let probabilities = [MonoProb 'H' (Decimal 1 4), MonoProb 'O' (Decimal 1 2)]
+              plain = "horse"
+          scorePlaintext probabilities plain `shouldBe` ScoredPlaintext plain (Decimal 2 8)
 
-        it "adds 1 for monograms, 2 for bigrams and 3 for quadgrams" $
-          scorePlaintext [(Mono <$> ["a", "o", "r", "x"])
-                         , (Bi <$> ["rs", "th", "oh"])
-                         , (Quad <$> ["orse", "xrse"])] "horse" `shouldBe` Score 7
+        -- it "adds 1 for monograms, 2 for bigrams and 3 for quadgrams" $
+        --   scorePlaintext [(Mono <$> ["a", "o", "r", "x"])
+        --                  , (Bi <$> ["rs", "th", "oh"])
+        --                  , (Quad <$> ["orse", "xrse"])] "horse" `shouldBe` Score 7
 
       describe "parsing monogram counts" $ do
         context "with a valid mongrams + counts  string" $ do
@@ -74,7 +65,7 @@ spec = parallel $ do
           it "should have a probability score of 0.4" $ do
             let input = [MonoCount 'A' 2, MonoCount 'T' 3]
                 expected = [MonoProb 'A' (Decimal 1 4), MonoProb 'T' (Decimal 1 6)]
-            calcPorobabilityScores input `shouldBe` expected
+            expected `shouldBe` calcProbabilityScores input
 
 -- helpers for tests
 

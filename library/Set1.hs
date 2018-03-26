@@ -5,14 +5,17 @@ module Set1 where
 
 import Data.Word (Word8)
 import qualified Data.ByteString        as BSStrict
+import qualified Data.ByteString.Lazy.Char8 as Ch8
 import qualified Data.ByteString.Lazy        as BS
 import qualified Data.ByteString.Base16.Lazy as BS16
 import qualified Data.ByteString.Base64.Lazy as BS64
 import Data.Bits ((.|.), xor)
-import Text.Regex.PCRE  (defaultExecOpt, compCaseless, defaultCompOpt, makeRegexOpts, matchCount)
+import qualified Text.Regex.PCRE as Rx
 import qualified Text.Trifecta as Tri
 import Text.Trifecta (letter, space, natural, some, parseByteString)
 import Data.Decimal (DecimalRaw(..))
+import Data.Monoid (Product(..))
+import Data.List (find)
 
 data NGram = Mono BS.ByteString
            | Bi BS.ByteString
@@ -109,22 +112,32 @@ splitNGrams n string = fst $ step emptyByte $ BS.foldr step initVal string
 
         emptyByte = BS.head " "
 
-scorePlaintext :: [[NGram]] -> BS.ByteString -> Score Int
-scorePlaintext ngrams s = foldr (nGramsScore s) 0 ngrams
+data ScoredPlaintext = ScoredPlaintext BS.ByteString (DecimalRaw Integer)
+  deriving (Show, Eq)
 
-nGramsScore :: BS.ByteString -> [NGram] -> Score Int -> Score Int
-nGramsScore str ngrams initScore = foldr step initScore ngrams
-  where
-    step :: NGram -> Score Int -> Score Int
-    step (Mono gram) score = score + Score (occuranceCount gram str) * 1
-    step (Bi gram) score   = score + Score (occuranceCount gram str) * 2
-    step (Quad gram) score = score + Score (occuranceCount gram str) * 3
+-- TODO: change [MonoProb] to dict
 
-occuranceCount :: BS.ByteString -> BS.ByteString -> Int
-occuranceCount = matchCount . regex
+scorePlaintext :: [MonoProb] -> BS.ByteString -> ScoredPlaintext
+scorePlaintext probs str = ScoredPlaintext str productOfScores
   where
-    regex = makeRegexOpts caseInsensitive defaultExecOpt
-    caseInsensitive = defaultCompOpt .|. compCaseless
+    productOfScores :: DecimalRaw Integer
+    productOfScores = getProduct $ foldMap Product allProbabilityScores
+
+    allProbabilityScores :: [DecimalRaw Integer]
+    allProbabilityScores = getProbabilityScore <$> splitNGrams 1 str
+
+    getProbabilityScore :: BS.ByteString -> DecimalRaw Integer
+    getProbabilityScore query | Just (MonoProb _ prob) <- find (fetch query) probs = prob
+                              | _                      <- find (fetch query) probs = Decimal 0 1
+
+    fetch :: BS.ByteString -> MonoProb -> Bool
+    fetch query (MonoProb ngram _) =  regexCaseIns (Ch8.singleton ngram) `Rx.matchTest` query
+
+
+regexCaseIns :: BS.ByteString -> Rx.Regex
+regexCaseIns = Rx.makeRegexOpts caseInsensitive Rx.defaultExecOpt
+  where
+    caseInsensitive = Rx.defaultCompOpt .|. Rx.compCaseless
 
 monogramCountsRaw :: IO BSStrict.ByteString
 monogramCountsRaw = BSStrict.readFile "english_monograms.txt"
@@ -142,8 +155,8 @@ parseMonogramCount = do
 getMonoGramCounts :: BSStrict.ByteString -> Tri.Result [MonoCount]
 getMonoGramCounts = parseByteString (some parseMonogramCount) mempty
 
-calcPorobabilityScores :: [MonoCount] -> [MonoProb]
-calcPorobabilityScores counts = fmap (countToProb totalCount) counts
+calcProbabilityScores :: [MonoCount] -> [MonoProb]
+calcProbabilityScores counts = fmap (countToProb totalCount) counts
   where
     totalCount :: Integer
     totalCount = foldr sumCounts 0 counts
@@ -152,6 +165,6 @@ calcPorobabilityScores counts = fmap (countToProb totalCount) counts
     sumCounts (MonoCount _ a) b = a + b
 
 countToProb :: Integer -> MonoCount -> MonoProb
-countToProb total (MonoCount char count) = MonoProb char $ countOverTotal
+countToProb total (MonoCount char count) = MonoProb char countOverTotal
   where
-    countOverTotal = (Decimal 0 count) / (Decimal 0 total)
+    countOverTotal = Decimal 0 count / Decimal 0 total
